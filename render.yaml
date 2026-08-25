@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: spend-mgmt
+    runtime: docker
+    plan: starter
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # set to Supabase's JDBC connection string, e.g. jdbc:postgresql://<host>:5432/postgres
+      - key: DATABASE_USERNAME
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false

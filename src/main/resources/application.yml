@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: spend-mgmt
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/spendmgmt}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 5
+      # Supabase pooled connections (pgbouncer, port 6543) don't support prepared statement
+      # caching well - keep this off if you point DATABASE_URL at the pooler.
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: ${PORT:8080}
+
+logging:
+  level:
+    com.dept.spendmgmt: INFO
