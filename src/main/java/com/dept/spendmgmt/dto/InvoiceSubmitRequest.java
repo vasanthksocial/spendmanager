@@ -12,5 +12,6 @@ public record InvoiceSubmitRequest(
     @NotNull LocalDate invoiceDate,
     @NotNull @DecimalMin(value = "0.01") BigDecimal claimedAmount,
     @NotBlank String invoiceFileUrl,
-    Map<String, Object> checklist
+    Map<String, Object> checklist,
+    String category // optional - defaults to "GENERAL" if not provided
 ) {}
