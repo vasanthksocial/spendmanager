@@ -8,7 +8,9 @@ import org.hibernate.annotations.Type;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Entity
@@ -59,6 +61,23 @@ public class Invoice {
     @Column(name = "current_stage", nullable = false, length = 30)
     private UserRole currentStage = UserRole.JUNIOR_ENGINEER;
 
+    /** Category used to resolve the approval matrix at submission time, e.g. "GENERAL", "CIVIL_WORKS". */
+    @Column(nullable = false, length = 50)
+    private String category = "GENERAL";
+
+    /**
+     * The approval chain resolved from ApprovalMatrix at submission time and frozen onto the
+     * invoice - later changes to the matrix never affect an invoice already in flight.
+     */
+    @Type(JsonType.class)
+    @Column(name = "approval_chain", columnDefinition = "jsonb", nullable = false)
+    private List<String> approvalChain = new ArrayList<>(
+        List.of("JUNIOR_ENGINEER", "ASSISTANT_ENGINEER", "EXECUTIVE_ENGINEER"));
+
+    /** Index into approvalChain of the stage currently able to act. */
+    @Column(name = "stage_index", nullable = false)
+    private int stageIndex = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -89,6 +108,12 @@ public class Invoice {
     public void setStatus(InvoiceStatus status) { this.status = status; }
     public UserRole getCurrentStage() { return currentStage; }
     public void setCurrentStage(UserRole currentStage) { this.currentStage = currentStage; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
+    public List<String> getApprovalChain() { return approvalChain; }
+    public void setApprovalChain(List<String> approvalChain) { this.approvalChain = approvalChain; }
+    public int getStageIndex() { return stageIndex; }
+    public void setStageIndex(int stageIndex) { this.stageIndex = stageIndex; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
