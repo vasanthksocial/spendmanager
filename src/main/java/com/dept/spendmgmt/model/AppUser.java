@@ -1,10 +1,12 @@
 package com.dept.spendmgmt.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
 @Table(name = "app_user")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class AppUser {
 
     @Id
