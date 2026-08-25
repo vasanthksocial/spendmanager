@@ -1,11 +1,13 @@
 package com.dept.spendmgmt.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
 @Table(name = "work_order")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class WorkOrder {
 
     @Id
@@ -41,7 +43,6 @@ public class WorkOrder {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
-    /** Contract balance still available to be claimed against - used to validate partial invoice submissions. */
     @Transient
     public BigDecimal getBalanceAvailable() {
         return contractValue.subtract(claimedToDate);
