@@ -22,21 +22,26 @@ public class InvoiceService {
     private final InvoiceApprovalRepository approvalRepository;
     private final WorkOrderRepository workOrderRepository;
     private final AppUserRepository userRepository;
+    private final ApprovalMatrixService approvalMatrixService;
 
     public InvoiceService(InvoiceRepository invoiceRepository,
                            InvoiceApprovalRepository approvalRepository,
                            WorkOrderRepository workOrderRepository,
-                           AppUserRepository userRepository) {
+                           AppUserRepository userRepository,
+                           ApprovalMatrixService approvalMatrixService) {
         this.invoiceRepository = invoiceRepository;
         this.approvalRepository = approvalRepository;
         this.workOrderRepository = workOrderRepository;
         this.userRepository = userRepository;
+        this.approvalMatrixService = approvalMatrixService;
     }
 
     /**
-     * Branch/division submission. Validates the claim fits within the work order's remaining
-     * contract balance (supports partial/progressive billing) and reserves that amount against
-     * the work order immediately, so two invoices can't over-claim the same balance concurrently.
+     * Branch/division submission. Resolves the approval chain from the ApprovalMatrix for this
+     * category + amount and freezes it onto the invoice - later matrix changes never affect
+     * invoices already in flight. Also validates the claim fits within the work order's
+     * remaining contract balance (supports partial/progressive billing) and reserves that
+     * amount immediately.
      */
     @Transactional
     public Invoice submit(InvoiceSubmitRequest req) {
@@ -60,6 +65,9 @@ public class InvoiceService {
                     + workOrder.getBalanceAvailable());
         }
 
+        String category = (req.category() == null || req.category().isBlank()) ? "GENERAL" : req.category();
+        List<String> chain = approvalMatrixService.resolveChain(category, req.claimedAmount());
+
         Invoice invoice = new Invoice();
         invoice.setInvoiceNo(req.invoiceNo());
         invoice.setWorkOrder(workOrder);
@@ -71,9 +79,11 @@ public class InvoiceService {
         invoice.setInvoiceFileUrl(req.invoiceFileUrl());
         invoice.setChecklist(req.checklist() != null ? req.checklist() : new HashMap<>());
         invoice.setStatus(InvoiceStatus.SUBMITTED);
-        invoice.setCurrentStage(UserRole.JUNIOR_ENGINEER);
+        invoice.setCategory(category);
+        invoice.setApprovalChain(chain);
+        invoice.setStageIndex(0);
+        invoice.setCurrentStage(UserRole.valueOf(chain.get(0)));
 
-        // Reserve the claim against the work order's remaining balance right away.
         workOrder.setClaimedToDate(workOrder.getClaimedToDate().add(req.claimedAmount()));
         workOrderRepository.save(workOrder);
 
@@ -81,10 +91,9 @@ public class InvoiceService {
     }
 
     /**
-     * Single entry point for JE / AE / EE action on an invoice: approve (advance to next stage,
-     * optionally adjusting the amount in the same action), reject (terminal), or modify
-     * (adjust the amount only, invoice stays at the same stage for the approver to act again).
-     * Every call appends one InvoiceApproval row - nothing is ever overwritten.
+     * Single entry point for approve / reject / modify on an invoice, walking the invoice's own
+     * frozen approval chain (resolved from the matrix at submission time) rather than a fixed
+     * hardcoded sequence. Every call appends one InvoiceApproval row - nothing is overwritten.
      */
     @Transactional
     public Invoice act(Long invoiceId, InvoiceApprovalActionRequest req) {
@@ -116,7 +125,6 @@ public class InvoiceService {
                 amountAfter = req.amount();
                 invoice.setCurrentAmount(amountAfter);
                 invoice.setStatus(InvoiceStatus.UNDER_REVIEW);
-                // stage unchanged - same approver must still explicitly approve or reject
                 adjustWorkOrderClaim(invoice.getWorkOrder(), amountBefore, amountAfter);
             }
             case APPROVE -> {
@@ -125,18 +133,19 @@ public class InvoiceService {
                     invoice.setCurrentAmount(amountAfter);
                     adjustWorkOrderClaim(invoice.getWorkOrder(), amountBefore, amountAfter);
                 }
-                UserRole next = actor.getRole().next();
-                if (next == null) {
-                    invoice.setCurrentStage(UserRole.EXECUTIVE_ENGINEER); // stays, marked completed via status
+                List<String> chain = invoice.getApprovalChain();
+                int nextIndex = invoice.getStageIndex() + 1;
+                if (nextIndex >= chain.size()) {
                     invoice.setStatus(InvoiceStatus.APPROVED);
+                    // currentStage stays as the last stage that acted - status is what marks completion
                 } else {
-                    invoice.setCurrentStage(next);
+                    invoice.setStageIndex(nextIndex);
+                    invoice.setCurrentStage(UserRole.valueOf(chain.get(nextIndex)));
                     invoice.setStatus(InvoiceStatus.UNDER_REVIEW);
                 }
             }
             case REJECT -> {
                 invoice.setStatus(InvoiceStatus.REJECTED);
-                // release the reserved balance back to the work order
                 releaseWorkOrderClaim(invoice.getWorkOrder(), amountBefore);
             }
         }
