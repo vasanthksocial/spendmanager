@@ -1,5 +1,6 @@
 package com.dept.spendmgmt.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Type;
@@ -12,6 +13,7 @@ import java.util.Map;
 
 @Entity
 @Table(name = "invoice")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Invoice {
 
     @Id
@@ -36,11 +38,9 @@ public class Invoice {
     @Column(name = "invoice_date", nullable = false)
     private LocalDate invoiceDate;
 
-    /** Original amount claimed by the vendor/JE at submission time - never changes after submission. */
     @Column(name = "claimed_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal claimedAmount;
 
-    /** Running amount as adjusted by approvers along the chain - this is what actually gets paid. */
     @Column(name = "current_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal currentAmount;
 
