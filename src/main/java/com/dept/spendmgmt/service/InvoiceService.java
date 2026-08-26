@@ -1,6 +1,7 @@
 package com.dept.spendmgmt.service;
 
 import com.dept.spendmgmt.dto.InvoiceApprovalActionRequest;
+import com.dept.spendmgmt.dto.InvoiceResubmitRequest;
 import com.dept.spendmgmt.dto.InvoiceSubmitRequest;
 import com.dept.spendmgmt.model.*;
 import com.dept.spendmgmt.repository.AppUserRepository;
@@ -36,13 +37,6 @@ public class InvoiceService {
         this.approvalMatrixService = approvalMatrixService;
     }
 
-    /**
-     * Branch/division submission. Resolves the approval chain from the ApprovalMatrix for this
-     * category + amount and freezes it onto the invoice - later matrix changes never affect
-     * invoices already in flight. Also validates the claim fits within the work order's
-     * remaining contract balance (supports partial/progressive billing) and reserves that
-     * amount immediately.
-     */
     @Transactional
     public Invoice submit(InvoiceSubmitRequest req) {
         WorkOrder workOrder = workOrderRepository.findById(req.workOrderId())
@@ -91,9 +85,8 @@ public class InvoiceService {
     }
 
     /**
-     * Single entry point for approve / reject / modify on an invoice, walking the invoice's own
-     * frozen approval chain (resolved from the matrix at submission time) rather than a fixed
-     * hardcoded sequence. Every call appends one InvoiceApproval row - nothing is overwritten.
+     * Single entry point for approve / reject / modify / return on an invoice, walking the
+     * invoice's own frozen approval chain. Every call appends one InvoiceApproval row.
      */
     @Transactional
     public Invoice act(Long invoiceId, InvoiceApprovalActionRequest req) {
@@ -112,6 +105,9 @@ public class InvoiceService {
         }
         if (invoice.getStatus() != InvoiceStatus.SUBMITTED && invoice.getStatus() != InvoiceStatus.UNDER_REVIEW) {
             throw new IllegalStateException("Invoice is in status " + invoice.getStatus() + " and cannot be acted on");
+        }
+        if (req.action() == ApprovalAction.RESUBMIT) {
+            throw new IllegalStateException("Use the resubmit endpoint, not the actions endpoint, for RESUBMIT");
         }
 
         BigDecimal amountBefore = invoice.getCurrentAmount();
@@ -137,7 +133,6 @@ public class InvoiceService {
                 int nextIndex = invoice.getStageIndex() + 1;
                 if (nextIndex >= chain.size()) {
                     invoice.setStatus(InvoiceStatus.APPROVED);
-                    // currentStage stays as the last stage that acted - status is what marks completion
                 } else {
                     invoice.setStageIndex(nextIndex);
                     invoice.setCurrentStage(UserRole.valueOf(chain.get(nextIndex)));
@@ -145,9 +140,18 @@ public class InvoiceService {
                 }
             }
             case REJECT -> {
+                // Terminal - kills the claim entirely and releases the reserved balance.
                 invoice.setStatus(InvoiceStatus.REJECTED);
                 releaseWorkOrderClaim(invoice.getWorkOrder(), amountBefore);
             }
+            case RETURN -> {
+                // Not terminal - sent back to the original submitter (JE) for correction.
+                // The reserved work order balance is left untouched since the claim is still alive.
+                invoice.setStatus(InvoiceStatus.RETURNED);
+                invoice.setStageIndex(0);
+                invoice.setCurrentStage(UserRole.valueOf(invoice.getApprovalChain().get(0)));
+            }
+            case RESUBMIT -> throw new IllegalStateException("unreachable");
         }
 
         invoice.setUpdatedAt(Instant.now());
@@ -158,6 +162,59 @@ public class InvoiceService {
         log.setStage(actor.getRole());
         log.setActedBy(actor);
         log.setAction(req.action());
+        log.setAmountBefore(amountBefore);
+        log.setAmountAfter(amountAfter);
+        log.setRemarks(req.remarks());
+        approvalRepository.save(log);
+
+        return invoice;
+    }
+
+    /**
+     * The submitter (JE) corrects and resends an invoice that was RETURNED. Restarts the
+     * invoice at the beginning of its (already-resolved) approval chain. The approval chain
+     * itself is not re-resolved even if the amount changes here - it stays frozen from the
+     * original submission, consistent with how MODIFY/APPROVE amount changes are handled.
+     */
+    @Transactional
+    public Invoice resubmit(Long invoiceId, InvoiceResubmitRequest req) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+            .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + invoiceId));
+
+        if (invoice.getStatus() != InvoiceStatus.RETURNED) {
+            throw new IllegalStateException("Invoice is in status " + invoice.getStatus() + "; only a RETURNED invoice can be resubmitted");
+        }
+
+        AppUser actor = userRepository.findById(req.submittedByUserId())
+            .orElseThrow(() -> new IllegalArgumentException("User not found: " + req.submittedByUserId()));
+
+        if (!actor.getId().equals(invoice.getSubmittedBy().getId())) {
+            throw new IllegalStateException("Only the original submitter can resubmit this invoice");
+        }
+
+        BigDecimal amountBefore = invoice.getCurrentAmount();
+        BigDecimal amountAfter = amountBefore;
+
+        if (req.amount() != null) {
+            amountAfter = req.amount();
+            invoice.setCurrentAmount(amountAfter);
+            adjustWorkOrderClaim(invoice.getWorkOrder(), amountBefore, amountAfter);
+        }
+        if (req.invoiceFileUrl() != null && !req.invoiceFileUrl().isBlank()) {
+            invoice.setInvoiceFileUrl(req.invoiceFileUrl());
+        }
+
+        invoice.setStatus(InvoiceStatus.SUBMITTED);
+        invoice.setStageIndex(0);
+        invoice.setCurrentStage(UserRole.valueOf(invoice.getApprovalChain().get(0)));
+        invoice.setUpdatedAt(Instant.now());
+        invoiceRepository.save(invoice);
+
+        InvoiceApproval log = new InvoiceApproval();
+        log.setInvoice(invoice);
+        log.setStage(actor.getRole());
+        log.setActedBy(actor);
+        log.setAction(ApprovalAction.RESUBMIT);
         log.setAmountBefore(amountBefore);
         log.setAmountAfter(amountAfter);
         log.setRemarks(req.remarks());
