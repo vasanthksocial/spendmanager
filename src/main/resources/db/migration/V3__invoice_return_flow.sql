@@ -1,0 +1,7 @@
+ALTER TABLE invoice DROP CONSTRAINT chk_invoice_status;
+ALTER TABLE invoice ADD CONSTRAINT chk_invoice_status CHECK (status IN
+    ('SUBMITTED','UNDER_REVIEW','APPROVED','REJECTED','RETURNED','FUND_DEMAND_RAISED','FUND_DEMAND_AUTHORIZED'));
+
+ALTER TABLE invoice_approval DROP CONSTRAINT chk_action;
+ALTER TABLE invoice_approval ADD CONSTRAINT chk_action CHECK (action IN
+    ('APPROVE','REJECT','MODIFY','RETURN','RESUBMIT'));
