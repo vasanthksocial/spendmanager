@@ -1,6 +1,7 @@
 package com.dept.spendmgmt.controller;
 
 import com.dept.spendmgmt.dto.InvoiceApprovalActionRequest;
+import com.dept.spendmgmt.dto.InvoiceResubmitRequest;
 import com.dept.spendmgmt.dto.InvoiceSubmitRequest;
 import com.dept.spendmgmt.model.Invoice;
 import com.dept.spendmgmt.model.InvoiceApproval;
@@ -30,6 +31,11 @@ public class InvoiceController {
     @PostMapping("/{id}/actions")
     public ResponseEntity<Invoice> act(@PathVariable Long id, @Valid @RequestBody InvoiceApprovalActionRequest req) {
         return ResponseEntity.ok(invoiceService.act(id, req));
+    }
+
+    @PostMapping("/{id}/resubmit")
+    public ResponseEntity<Invoice> resubmit(@PathVariable Long id, @Valid @RequestBody InvoiceResubmitRequest req) {
+        return ResponseEntity.ok(invoiceService.resubmit(id, req));
     }
 
     @GetMapping("/{id}/history")
