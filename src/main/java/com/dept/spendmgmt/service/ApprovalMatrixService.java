@@ -18,11 +18,13 @@ public class ApprovalMatrixService {
 
     /**
      * Resolves the approval chain for a category + amount at submission time.
-     * The result is frozen onto the invoice - later changes to the matrix never
-     * affect invoices already in flight.
+     * Rules are checked narrowest-band-first, so if ranges overlap, the most
+     * specific rule wins rather than whichever the database happened to return first.
+     * The result is frozen onto the invoice - later matrix changes never affect
+     * invoices already in flight.
      */
     public List<String> resolveChain(String category, BigDecimal amount) {
-        List<ApprovalMatrix> rules = repository.findByCategoryAndActiveTrue(category);
+        List<ApprovalMatrix> rules = repository.findByCategoryOrderedBySpecificity(category);
         for (ApprovalMatrix rule : rules) {
             boolean aboveMin = amount.compareTo(rule.getMinAmount()) >= 0;
             boolean belowMax = rule.getMaxAmount() == null || amount.compareTo(rule.getMaxAmount()) <= 0;
