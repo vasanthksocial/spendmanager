@@ -5,6 +5,7 @@ public enum InvoiceStatus {
     UNDER_REVIEW,
     APPROVED,
     REJECTED,
+    RETURNED,
     FUND_DEMAND_RAISED,
     FUND_DEMAND_AUTHORIZED
 }
